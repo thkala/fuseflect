@@ -52,8 +52,6 @@
 
 static char *src = "";
 
-static pthread_mutex_t id_mtx = PTHREAD_MUTEX_INITIALIZER;
-
 
 
 #define SRC(p)		char __##p [PATH_MAX + 1]; \
@@ -66,16 +64,12 @@ static pthread_mutex_t id_mtx = PTHREAD_MUTEX_INITIALIZER;
 #define RET(x, s, f)	TRY(x, s, f, __r); return 0;
 
 
-#define LMX		pthread_mutex_lock(&id_mtx);
-#define UMX		pthread_mutex_unlock(&id_mtx);
-
 #define IDRET(x, s, f)	struct fuse_context *ctx = fuse_get_context(); \
-			LMX \
 			int ouid __attribute__ ((unused)) = setfsuid(ctx->uid); \
 			int ogid __attribute__ ((unused)) = setfsgid(ctx->gid); \
 			RET(x, \
-			    s; setfsuid(ouid); setfsgid(ogid); UMX, \
-			    f; setfsuid(ouid); setfsgid(ogid); UMX \
+			    s; setfsuid(ouid); setfsgid(ogid), \
+			    f; setfsuid(ouid); setfsgid(ogid) \
 			)
 
 
@@ -149,7 +143,6 @@ static int flect_rmdir(const char *path)
 
 static int flect_symlink(const char *from, const char *to)
 {
-	SRC(from)
 	SRC(to)
 	IDRET(symlink(from, to),,)
 }
