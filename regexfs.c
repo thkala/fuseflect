@@ -11,7 +11,7 @@
 
 
 
-static const char* fuseregexfsVersion = "2008.09.24";
+static const char* fuseregexfsVersion = "2023.05.09";
 
 #define _GNU_SOURCE
 
