@@ -1,3 +1,7 @@
+0.1.0:
+	* Forked to create regexfs
+	* Now able to rename files according to regexes with PCRE2
+	* Hash based caching available for improved speeds
 0.0.2:
 	* symlink() does not mess up the symlink contents any more
 	* set*uid() function per-thread, therefore the locking code is not

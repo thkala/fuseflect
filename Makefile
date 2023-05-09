@@ -11,23 +11,19 @@
 prefix := /usr/local
 bindir := $(prefix)/bin
 
-DEBUG :=
-CFLAGS := -O2 -Wall $(DEBUG)
-
-
+DEBUG := 
+CFLAGS := -O3 -Wall -lpcre2-8 $(DEBUG)
 
 # Yes, I am lazy...
 VER := $(shell head -n 1 NEWS | cut -d : -f 1)
 
+all: regexfs
 
-
-all: fuseflect
-
-fuseflect: fuseflect.c NEWS
+regexfs: regexfs.c NEWS
 	$(CC) $(shell pkg-config fuse --cflags --libs) $(CFLAGS) -DVERSION=\"$(VER)\" $< -o $@
 
 install: all
-	install -D -m755 fuseflect $(bindir)/fuseflect
+	install -D -m755 regexfs $(bindir)/regexfs
 
 clean:
-	rm -f *.o fuseflect
+	rm -f *.o regexfs
