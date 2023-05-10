@@ -44,8 +44,21 @@ Run `regexfs -h` to see the various command line options. All you have to do
 in most cases is:
 
 ```bash
-$ regexfs source_directory/ 'regex1:replace1;replace2,regex2:replace3,...' mountpoint/
+$ regexfs source_directory/ -o 'regex=regex1:replace1;replace2;regex2:replace3;...' mountpoint/
 ```
+
+If you want to use regexfs from /etc/fstab, the following example shows its
+use:
+
+regexfs#/usr/share/doc /fs/vfs/doc fuse defaults,regex=... 0 0
+
+If you do use regexfs in your /etc/fstab, you will probably want to add the
+allow_other and default_permissions options. The first option allows non-root
+users to access regexfs, while the second one activates the in-kernel
+permission checking, since regexfs does no access control on its own.
+
+Please note that you may need to replace whitespace characters in the regex
+and escape others to allow proper parsing of the file.
 
 WARNING: _NEVER_ USE allow_other WITHOUT default_permissions, OR YOU RISK
 ALLOWING UNPRIVILEDGED PROCESSES TO ACCESS FILES THEY SHOULD NOT BE ABLE TO.

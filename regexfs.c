@@ -53,6 +53,8 @@ static int src_len;
 #define TRY(x, s, f, r) int (r) = (x); if ((r) >= 0) { s; } else { int __e = -errno; f; return __e; }
 #define RET(x, s, f)  TRY(x, s, f, __r); return 0;
 
+char* replacement_str;
+
 typedef struct {
     pcre2_code *regex;
     pcre2_match_data *match_data;
@@ -63,41 +65,52 @@ typedef struct {
 regex_replaces* results = NULL;
 int n_results;
 
-int regexfs_parse_replacements(char* replacement_str) {
-    n_results = 1;
-    for (int i = 0; i < strlen(replacement_str); i++) {
-        if (replacement_str[i] == ',') {
+int regexfs_parse_replacements() {
+    n_results = 0;
+    int last_semicolon = 0;
+    int full_len = strlen(replacement_str);
+    for (int i = 0; i < full_len; i++) {
+        switch (replacement_str[i]) {
+        case ':':
             n_results++;
+            if (last_semicolon)
+                replacement_str[last_semicolon] = '\0';
+            break;
+        case ';':
+            last_semicolon = i;
+            break;
+        default:
+            break;
         }
     }
 
     results = malloc(sizeof(regex_replaces) * n_results);
 
     // iterate over the regex_replaces structs
-    char* regex_replaces_str = replacement_str;
     for (int i = 0; i < n_results; i++) {
         // parse the regex
-        PCRE2_SPTR regex = (PCRE2_SPTR)regex_replaces_str;
-        regex_replaces_str = strchr(regex_replaces_str, ':');
-        regex_replaces_str[0] = '\0';
-        regex_replaces_str++;
+        PCRE2_SPTR regex = (PCRE2_SPTR)replacement_str;
+        replacement_str = strchr(replacement_str, ':');
+        replacement_str[0] = '\0';
+        replacement_str++;
 
         // parse the replacements
         results[i].n_replacements = 1;
         int j;
-        for (j = 0; regex_replaces_str[j] != ',' && regex_replaces_str[j] != '\0'; j++) {
-            if (regex_replaces_str[j] == ';') {
-                regex_replaces_str[j] = '\0';
+        for (j = 0; replacement_str[j] != '\0'; j++) {
+            if (replacement_str[j] == ';') {
+                replacement_str[j] = '\0';
                 results[i].n_replacements++;
             }
         }
-        regex_replaces_str[j] = '\0';
+        printf("regex %s\n", regex);
 
         results[i].replacements = malloc(sizeof(PCRE2_SPTR) * results[i].n_replacements);
         // fill replacements with pointers to the start of each replacement
         for (int k = 0; k < results[i].n_replacements; k++) {
-            results[i].replacements[k] = (PCRE2_SPTR)regex_replaces_str;
-            regex_replaces_str += strlen(regex_replaces_str) + 1;
+            results[i].replacements[k] = (PCRE2_SPTR)replacement_str;
+            printf("replacement %s\n", replacement_str);
+            replacement_str += strlen(replacement_str) + 1;
         }
 
         // compile the regex
@@ -115,13 +128,13 @@ int regexfs_parse_replacements(char* replacement_str) {
             // Handle compile error
             PCRE2_UCHAR buffer[256];
             pcre2_get_error_message(errorcode, buffer, sizeof(buffer));
-            printf("PCRE2 compilation failed at offset %d: %s\n", (int)erroroffset, buffer);
+            fprintf(stderr, "PCRE2 compilation failed at offset %d: %s\n", (int)erroroffset, buffer);
             return -1;
         }
 
         pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(compiled_regex, NULL);
         if (match_data == NULL) {
-            printf("pcre2_match_data_create_from_pattern failed!\n");
+            fprintf(stderr, "pcre2_match_data_create_from_pattern failed!\n");
             return -1;
         }
 
@@ -150,10 +163,9 @@ static int regexfs_transform_path(const char* path, char* output_path) {
     if (!stat(path, &statbuf) && S_ISDIR(statbuf.st_mode))
         return 0;
     
-    char* dirc = strdup(path);
+    char* dirc = strdupa(path);
     char* dirn = dirname(dirc);
     int dirn_len = strlen(dirn);
-    free(dirc);
     output_path[src_len + dirn_len] = '\0';
 
     // check if path in hashtable
@@ -173,7 +185,7 @@ static int regexfs_transform_path(const char* path, char* output_path) {
         }
     }
 
-    char* basec = strdup(path);
+    char* basec = strdupa(path);
     char* base = basename(basec);
 
     DIR *dp;
@@ -230,7 +242,6 @@ static int regexfs_transform_path(const char* path, char* output_path) {
     }
 
     // no results
-    free(basec);
     closedir(dp);
     return -ENOENT;
 success:
@@ -241,7 +252,6 @@ success:
     entry->output_path = strdup(output_path);
     HASH_ADD_KEYPTR(hh, path_cache, entry->path, strlen(entry->path), entry);
 
-    free(basec);
     closedir(dp);
     return 0;
 }
@@ -492,12 +502,12 @@ enum {
 static void usage(const char* progname)
 {
     fprintf(stdout,
-"usage: %s readwritepath regex mountpoint [options]\n"
+"usage: %s readwritepath -o regex=... mountpoint [options]\n"
 "\n"
 "   Mounts readwritepath as a read-only mount at mountpoint\n"
 "   Regex is used to replace filenames in the read-only mount\n"
 "   The format for the regex is:\n"
-"   regex1:replacement1;replacement2,regex2:replacement3...\n"
+"   regex1:replacement1;replacement2|regex2:replacement3...\n"
 "\n"
 "general options:\n"
 "   -o opt,[opt...]     mount options\n"
@@ -515,14 +525,6 @@ static int regexfs_parse_opt(void *data, const char *arg, int key,
             if (src == NULL) {
                 src = strdup(arg);
                 src_len = strlen(src);
-                return 0;
-            } else if (results == NULL) {
-                char* val = strdup(arg);
-                int ret = regexfs_parse_replacements(val);
-                if (ret < 0) {
-                    printf("parsing replacements failed!\n");
-                    exit(1);
-                }
                 return 0;
             } else {
                 return 1;
@@ -547,6 +549,7 @@ static struct fuse_opt regexfs_opts[] = {
     FUSE_OPT_KEY("--help",      KEY_HELP),
     FUSE_OPT_KEY("-V",          KEY_VERSION),
     FUSE_OPT_KEY("--version",   KEY_VERSION),
+    { "regex=%s", 0, 0 },
     FUSE_OPT_END
 };
 
@@ -554,7 +557,7 @@ int main(int argc, char *argv[]) {
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
     int res;
 
-    res = fuse_opt_parse(&args, &src, regexfs_opts, regexfs_parse_opt);
+    res = fuse_opt_parse(&args, &replacement_str, regexfs_opts, regexfs_parse_opt);
     if (res != 0) {
         fprintf(stderr, "Invalid arguments\n");
         fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
@@ -565,6 +568,12 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
         exit(1);
     }
+    if (replacement_str == 0) {
+        fprintf(stderr, "Missing regex\n");
+        fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
+        exit(1);
+    }
+    regexfs_parse_replacements();
 
     #if FUSE_VERSION >= 26
         fuse_main(args.argc, args.argv, &regexfs_oper, NULL);
