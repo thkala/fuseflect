@@ -57,7 +57,6 @@ char* replacement_str;
 
 typedef struct {
     pcre2_code *regex;
-    pcre2_match_data *match_data;
     PCRE2_SPTR* replacements;
     int n_replacements;
 } regex_replaces;
@@ -132,14 +131,7 @@ int regexfs_parse_replacements() {
             return -1;
         }
 
-        pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(compiled_regex, NULL);
-        if (match_data == NULL) {
-            fprintf(stderr, "pcre2_match_data_create_from_pattern failed!\n");
-            return -1;
-        }
-
         results[i].regex = compiled_regex;
-        results[i].match_data = match_data;
     }
     return 0;
 }
@@ -179,6 +171,7 @@ static int regexfs_transform_path(const char* path, char* output_path) {
         // check if file exists
         if (!stat(entry->output_path, &statbuf) && S_ISREG(statbuf.st_mode)) {
             strncpy(output_path, entry->output_path, PATH_MAX);
+            pthread_rwlock_unlock(&path_cache_lock);
             return 0;
         } else {
             pthread_rwlock_unlock(&path_cache_lock);
@@ -216,7 +209,11 @@ static int regexfs_transform_path(const char* path, char* output_path) {
         int found = 0;
         for (int i = 0; i < n_results; ++i) {
             pcre2_code* regex = results[i].regex;
-            pcre2_match_data* match_data = results[i].match_data;
+            pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(regex, NULL);
+            if (match_data == NULL) {
+                fprintf(stderr, "pcre2_match_data_create_from_pattern failed!\n");
+                exit(2);
+            }
             num_matches = pcre2_match(regex, (PCRE2_SPTR)de->d_name, PCRE2_ZERO_TERMINATED, 0, 0, match_data, NULL);
             if (num_matches < 0)
                 continue;
@@ -309,7 +306,11 @@ static int regexfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
         }
         for (int i = 0; i < n_results; ++i) {
             pcre2_code* regex = results[i].regex;
-            pcre2_match_data* match_data = results[i].match_data;
+            pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(regex, NULL);
+            if (match_data == NULL) {
+                fprintf(stderr, "pcre2_match_data_create_from_pattern failed!\n");
+                exit(2);
+            }
             num_matches = pcre2_match(regex, (PCRE2_SPTR)de->d_name, PCRE2_ZERO_TERMINATED, 0, 0, match_data, NULL);
             if (num_matches < 0)
                 continue;
