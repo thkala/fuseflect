@@ -215,8 +215,10 @@ static int regexfs_transform_path(const char* path, char* output_path) {
                 exit(2);
             }
             num_matches = pcre2_match(regex, (PCRE2_SPTR)de->d_name, PCRE2_ZERO_TERMINATED, 0, 0, match_data, NULL);
-            if (num_matches < 0)
+            if (num_matches < 0) {
+                pcre2_match_data_free(match_data);
                 continue;
+            }
 
             for (int j = 0; j < results[i].n_replacements; ++j) {
                 new_name_len = NAME_MAX + 1;
@@ -233,16 +235,17 @@ static int regexfs_transform_path(const char* path, char* output_path) {
                     new_name, // output
                     &new_name_len  // Result length
                 );
-                if (num_matches < 1) {
+                if (num_matches < 1)
                     exit(1);
-                }
                 new_name[new_name_len] = '\0';
 
-                if (strcmp((char*)new_name, base) == 0)
+                if (strcmp((char*)new_name, base) == 0) {
+                    pcre2_match_data_free(match_data);
                     goto success;
-                else
-                    found = 1;
+                }
+                found = 1;
             }
+            pcre2_match_data_free(match_data);
         }
         if (!found && strcmp(de->d_name, base) == 0)
             goto success;
@@ -304,6 +307,11 @@ static int regexfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
                 goto error;
             continue;
         }
+        if (de->d_type == DT_DIR) {
+            if (filler(buf, de->d_name, &st, 0))
+                goto error;
+            continue;
+        }
         for (int i = 0; i < n_results; ++i) {
             pcre2_code* regex = results[i].regex;
             pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(regex, NULL);
@@ -312,8 +320,10 @@ static int regexfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
                 exit(2);
             }
             num_matches = pcre2_match(regex, (PCRE2_SPTR)de->d_name, PCRE2_ZERO_TERMINATED, 0, 0, match_data, NULL);
-            if (num_matches < 0)
+            if (num_matches < 0) {
+                pcre2_match_data_free(match_data);
                 continue;
+            }
 
             for (int j = 0; j < results[i].n_replacements; ++j) {
                 new_name_len = NAME_MAX + 1;
@@ -330,16 +340,17 @@ static int regexfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, 
                     new_name, // output
                     &new_name_len  // Result length
                 );
-                if (num_matches < 1) {
-                    return -1;
-                }
+                if (num_matches < 1)
+                    exit(1);
                 new_name[new_name_len] = '\0';
 
-                if (filler(buf, (const char*)new_name, &st, 0))
+                if (filler(buf, (const char*)new_name, &st, 0)) {
+                    pcre2_match_data_free(match_data);
                     goto error;
-                else
-                    added = 1;
+                }
+                added = 1;
             }
+            pcre2_match_data_free(match_data);
         }
         if (!added && filler(buf, de->d_name, &st, 0))
             break;
