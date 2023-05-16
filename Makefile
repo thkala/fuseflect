@@ -20,7 +20,7 @@ VER := $(shell head -n 1 NEWS | cut -d : -f 1)
 all: regexfs
 
 regexfs: regexfs.c NEWS
-	$(CC) $(shell pkg-config fuse --cflags --libs) $(CFLAGS) -DVERSION=\"$(VER)\" $< -o $@
+	$(CC) $< -o $@ $(shell pkg-config fuse --cflags --libs) $(CFLAGS) -DVERSION=\"$(VER)\"
 
 install: all
 	install -D -m755 regexfs $(bindir)/regexfs

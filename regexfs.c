@@ -153,6 +153,8 @@ typedef struct {
 
 path_cache_entry* path_cache = NULL;
 
+pthread_rwlock_t path_cache_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 static int regexfs_transform_path(const char* path, char* output_path) {
     // idea for caching: path -> output_path is an injective function, so we can use a hash table to cache the results
     // if the hash table entry does not point to a file that exists anymore, we can remove it from the hash table and try again
@@ -170,6 +172,8 @@ static int regexfs_transform_path(const char* path, char* output_path) {
 
     // check if path in hashtable
     path_cache_entry* entry;
+    // lock
+    pthread_rwlock_rdlock(&path_cache_lock);
     HASH_FIND_STR(path_cache, path, entry);
     if (entry != NULL) {
         // check if file exists
@@ -177,13 +181,19 @@ static int regexfs_transform_path(const char* path, char* output_path) {
             strncpy(output_path, entry->output_path, PATH_MAX);
             return 0;
         } else {
-            // remove entry from hashtable
-            HASH_DEL(path_cache, entry);
-            free(entry->path);
-            free(entry->output_path);
-            free(entry);
+            pthread_rwlock_unlock(&path_cache_lock);
+            pthread_rwlock_wrlock(&path_cache_lock);
+            HASH_FIND_STR(path_cache, path, entry);
+            if (entry != NULL) {
+                // remove entry from hashtable
+                HASH_DEL(path_cache, entry);
+                free(entry->path);
+                free(entry->output_path);
+                free(entry);
+            }
         }
     }
+    pthread_rwlock_unlock(&path_cache_lock);
 
     char* basec = strdupa(path);
     char* base = basename(basec);
@@ -250,7 +260,9 @@ success:
     entry = malloc(sizeof(path_cache_entry));
     entry->path = strdup(path);
     entry->output_path = strdup(output_path);
+    pthread_rwlock_wrlock(&path_cache_lock);
     HASH_ADD_KEYPTR(hh, path_cache, entry->path, strlen(entry->path), entry);
+    pthread_rwlock_unlock(&path_cache_lock);
 
     closedir(dp);
     return 0;
